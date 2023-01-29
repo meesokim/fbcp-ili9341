@@ -5,7 +5,7 @@
 #include <unistd.h>
 
 // Initialized in spi.cpp along with the rest of the BCM2835 peripheral:
-extern volatile uint64_t *systemTimerRegister;
+extern volatile uint32_t *systemTimerRegister;
 #define tick() (*systemTimerRegister)
 
 #endif

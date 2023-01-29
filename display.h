@@ -21,8 +21,10 @@
 #include "ssd1351.h"
 #elif defined(MZ61581)
 #include "mz61581.h"
-#elif defined(MPI3501)
+#elif defined(MPI3501) 
 #include "mpi3501.h"
+#elif defined(KEDEI_TRASH)
+#include "kedei_trash.h"
 #else
 #error Please reconfigure CMake with your display controller directive set!
 #endif

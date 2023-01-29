@@ -35,6 +35,13 @@ void ChipSelectHigh();
 
 static uint32_t writeCounter = 0;
 
+#define WRITE_FIFO_CMD(word) do { \
+  uint8_t w = (word); \
+  spi->fifo = w; \
+  TOGGLE_CHIP_SELECT_LINE(); \
+  DEBUG_PRINT_WRITTEN_BYTE(w); \
+  } while(0)
+
 #define WRITE_FIFO(word) do { \
   uint8_t w = (word); \
   spi->fifo = w; \
@@ -49,7 +56,7 @@ volatile SPIRegisterFile *spi = 0;
 
 // Points to the system timer register. N.B. spec sheet says this is two low and high parts, in an 32-bit aligned (but not 64-bit aligned) address. Profiling shows
 // that Pi 3 Model B does allow reading this as a u64 load, and even when unaligned, it is around 30% faster to do so compared to loading in parts "lo | (hi << 32)".
-volatile uint64_t *systemTimerRegister = 0;
+volatile uint32_t *systemTimerRegister = 0;
 
 void DumpSPICS(uint32_t reg)
 {
@@ -259,7 +266,81 @@ void WaitForPolledSPITransferToFinish()
 
   if ((cs & BCM2835_SPI0_CS_RXD)) spi->cs = BCM2835_SPI0_CS_CLEAR_RX | BCM2835_SPI0_CS_TA | DISPLAY_SPI_DRIVE_SETTINGS;
 }
+#ifdef KEDEI_TRASH
+extern void spi_write2(const char* tbuf, const char *tbuf2);
+void inline lcd_data(uint16_t data) {
+	static char b1[3] = { 0, 0, 0x15 }, b2[2] = { 0, 0x1f};
+	*(unsigned short *)b1 = data;
+	// b1[0] = ((char *)&data)[1];
+	// b1[1] = ((char *)&data)[0];
+	spi_write2(b1, b2);
+}
 
+void inline lcd_cmd(uint16_t cmd) {
+	static char b1[3] = { 0, 0, 0x11 }, b2[2] = { 0, 0x1B};
+	*(unsigned short *)b1 = cmd;
+	// b1[0] = ((char *)&data)[1];
+	// b1[1] = ((char *)&data)[0];
+	spi_write2(b1, b2);
+}
+
+void RunSPITask(SPITask *task)
+{
+  uint32_t cs;
+  uint16_t *tStart = (uint16_t *)task->PayloadStart();
+  uint16_t *tEnd = (uint16_t *)task->PayloadEnd();
+  uint32_t payloadSize = tEnd - tStart;
+  // uint8_t *tPrefillEnd = tStart + MIN(15, payloadSize);
+
+#if 1
+  lcd_cmd(task->cmd);
+  // printf("%02x:", task->cmd);
+  while(payloadSize--)
+  {
+    // printf("%04x,", *tStart);
+    lcd_data(*tStart++);
+  }
+  //  printf("\r");
+#else
+  /* Clear TX and RX fifos */
+  spi->cs = BCM2835_SPI0_CS_TA | BCM2835_SPI0_CS_CLEAR_TX | DISPLAY_SPI_DRIVE_SETTINGS;
+  //   bcm2835_peri_set_bits(paddr, BCM2835_SPI0_CS_CLEAR, BCM2835_SPI0_CS_CLEAR);
+  //   /* Set TA = 1 */
+  //   bcm2835_peri_set_bits(paddr, BCM2835_SPI0_CS_TA, BCM2835_SPI0_CS_TA);
+  spi->fifo = 0;
+	spi->fifo = task->cmd;
+	spi->fifo = 0x11;
+  while(!(spi->cs & (BCM2835_SPI0_CS_RXD|BCM2835_SPI0_CS_DONE))); 
+  // while (!(bcm2835_peri_read_nb(paddr) & BCM2835_SPI0_CS_DONE));
+  spi->cs = BCM2835_SPI0_CS_TA | BCM2835_SPI0_CS_CLEAR_TX | DISPLAY_SPI_DRIVE_SETTINGS;
+  spi->fifo = 0;
+  spi->fifo = 0x1b;
+  while(!(spi->cs & (BCM2835_SPI0_CS_RXD|BCM2835_SPI0_CS_DONE))); 
+  // while (!(bcm2835_peri_read_nb(paddr) & BCM2835_SPI0_CS_DONE));
+  spi->cs = BCM2835_SPI0_CS_TA | BCM2835_SPI0_CS_CLEAR_TX | DISPLAY_SPI_DRIVE_SETTINGS;
+  while(payloadSize-=2)
+  {
+    /* Clear TX and RX fifos */
+    spi->cs = BCM2835_SPI0_CS_TA | BCM2835_SPI0_CS_CLEAR_TX | DISPLAY_SPI_DRIVE_SETTINGS;
+    //   bcm2835_peri_set_bits(paddr, BCM2835_SPI0_CS_CLEAR, BCM2835_SPI0_CS_CLEAR);
+    //   /* Set TA = 1 */
+    //   bcm2835_peri_set_bits(paddr, BCM2835_SPI0_CS_TA, BCM2835_SPI0_CS_TA);
+  	spi->fifo = *tStart++;
+  	spi->fifo = *tStart++;
+    spi->fifo = 0x15;
+    while(!(spi->cs & (BCM2835_SPI0_CS_RXD|BCM2835_SPI0_CS_DONE))); 
+    // while (!(bcm2835_peri_read_nb(paddr) & BCM2835_SPI0_CS_DONE));
+    spi->cs = BCM2835_SPI0_CS_TA | BCM2835_SPI0_CS_CLEAR_TX | DISPLAY_SPI_DRIVE_SETTINGS;
+    spi->fifo = 0;
+    spi->fifo = 0x1f;
+    while(!(spi->cs & (BCM2835_SPI0_CS_RXD|BCM2835_SPI0_CS_DONE))); 
+    // while (!(bcm2835_peri_read_nb(paddr) & BCM2835_SPI0_CS_DONE));
+    spi->cs = BCM2835_SPI0_CS_TA | BCM2835_SPI0_CS_CLEAR_TX | DISPLAY_SPI_DRIVE_SETTINGS;
+  }
+#endif
+  // previousTaskWasSPI = true;  
+}
+#else
 #ifdef ALL_TASKS_SHOULD_DMA
 
 #ifndef USE_DMA_TRANSFERS
@@ -359,9 +440,9 @@ void RunSPITask(SPITask *task)
 
 #ifdef DISPLAY_SPI_BUS_IS_16BITS_WIDE
   // On e.g. the ILI9486, all commands are 16-bit, so need to be clocked in in two bytes. The MSB byte is always zero though in all the defined commands.
-  WRITE_FIFO(0x00);
+  WRITE_FIFO_CMD(0x00);
 #endif
-  WRITE_FIFO(task->cmd);
+  WRITE_FIFO_CMD(task->cmd);
 
 #ifdef DISPLAY_SPI_BUS_IS_16BITS_WIDE
   while(!(spi->cs & (BCM2835_SPI0_CS_DONE))) /*nop*/;
@@ -405,6 +486,7 @@ void RunSPITask(SPITask *task)
 #endif
 }
 #endif
+#endif // KEDEI_TRASH
 
 SharedMemory *spiTaskMemory = 0;
 volatile uint64_t spiThreadIdleUsecs = 0;
@@ -515,7 +597,7 @@ int InitSPI()
   if (bcm2835 == MAP_FAILED) FATAL_ERROR("mapping /dev/mem failed");
   spi = (volatile SPIRegisterFile*)((uintptr_t)bcm2835 + BCM2835_SPI0_BASE);
   gpio = (volatile GPIORegisterFile*)((uintptr_t)bcm2835 + BCM2835_GPIO_BASE);
-  systemTimerRegister = (volatile uint64_t*)((uintptr_t)bcm2835 + BCM2835_TIMER_BASE + 0x04); // Generates an unaligned 64-bit pointer, but seems to be fine.
+  systemTimerRegister = (volatile uint32_t*)((uintptr_t)bcm2835 + BCM2835_TIMER_BASE + 0x04); // Generates an unaligned 64-bit pointer, but seems to be fine.
   // TODO: On graceful shutdown, (ctrl-c signal?) close(mem_fd)
 #endif
 
