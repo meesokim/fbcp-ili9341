@@ -4,6 +4,7 @@
 
 #include <memory.h>
 
+extern void lcd_fill(uint16_t);
 void ClearScreen()
 {
   for(int y = 0; y < DISPLAY_HEIGHT; ++y)

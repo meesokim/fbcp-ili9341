@@ -101,6 +101,33 @@ extern volatile SPIRegisterFile *spi;
 #define MAX_SPI_TASK_SIZE 65528
 #endif
 
+#ifdef KEDEI_TRASH
+typedef struct __attribute__((packed)) SPITask
+{
+  uint32_t size; // Size, including both 8-bit and 9-bit tasks
+#ifdef SPI_3WIRE_PROTOCOL
+  uint32_t sizeExpandedTaskWithPadding; // Size of the expanded 9-bit/32-bit task. The expanded task starts at address spiTask->data + spiTask->size - spiTask->sizeExpandedTaskWithPadding;
+#endif
+#ifdef SPI_32BIT_COMMANDS
+  uint32_t cmd;
+#else
+  uint16_t cmd;
+#endif
+  uint32_t dmaSpiHeader;
+#ifdef OFFLOAD_PIXEL_COPY_TO_DMA_CPP
+  uint8_t *fb;
+  uint8_t *prevFb;
+  uint16_t width;
+#endif
+  uint16_t data[]; // Contains both 8-bit and 9-bit tasks back to back, 8-bit first, then 9-bit.
+
+  inline uint16_t *PayloadStart() { return data; }
+  inline uint16_t *PayloadEnd() { return data + size; }
+  inline uint32_t PayloadSize() const { return size; }
+  inline uint32_t *DmaSpiHeaderAddress() { return &dmaSpiHeader; }
+
+} SPITask;
+#else
 typedef struct __attribute__((packed)) SPITask
 {
   uint32_t size; // Size, including both 8-bit and 9-bit tasks
@@ -133,6 +160,7 @@ typedef struct __attribute__((packed)) SPITask
 #endif
 
 } SPITask;
+#endif
 
 #define BEGIN_SPI_COMMUNICATION() do { spi->cs = BCM2835_SPI0_CS_TA | DISPLAY_SPI_DRIVE_SETTINGS; } while(0)
 #define END_SPI_COMMUNICATION()  do { \
@@ -156,6 +184,29 @@ typedef struct __attribute__((packed)) SPITask
 
 
 // A convenience for defining and dispatching SPI task bytes inline
+#ifdef KEDEI_TRASH
+void lcd_cmd(uint16_t);
+void lcd_data(uint16_t);
+
+#define SPI_TRANSFER(command, ...) do { \
+    int16_t data_buffer[] = { __VA_ARGS__ }; \
+    SPITask *t = AllocTask(sizeof(data_buffer)); \
+    t->cmd = (command); \
+    memcpy(t->data, data_buffer, sizeof(data_buffer)); \
+    CommitTask(t); \
+    RunSPITask(t); \
+    DoneTask(t); \
+  } while(0)
+
+#define QUEUE_SPI_TRANSFER(command, ...) do { \
+    int16_t data_buffer[] = { __VA_ARGS__ }; \
+    SPITask *t = AllocTask(sizeof(data_buffer)); \
+    t->cmd = (command); \
+    memcpy(t->data, data_buffer, sizeof(data_buffer)); \
+    CommitTask(t); \
+  } while(0)
+
+#else
 #define SPI_TRANSFER(command, ...) do { \
     char data_buffer[] = { __VA_ARGS__ }; \
     SPITask *t = AllocTask(sizeof(data_buffer)); \
@@ -173,6 +224,9 @@ typedef struct __attribute__((packed)) SPITask
     memcpy(t->data, data_buffer, sizeof(data_buffer)); \
     CommitTask(t); \
   } while(0)
+
+#endif
+
 
 #ifdef DISPLAY_SPI_BUS_IS_16BITS_WIDE // For displays that have their command register set be 16 bits word size width (ILI9486)
 
@@ -215,6 +269,7 @@ typedef struct __attribute__((packed)) SPITask
 
 #else // Regular 8-bit interface with 16bits wide set cursor commands (most displays)
 
+#ifdef KEDEI_TRASH
 #define QUEUE_MOVE_CURSOR_TASK(cursor, pos) do { \
     SPITask *task = AllocTask(2); \
     task->cmd = (cursor); \
@@ -234,6 +289,28 @@ typedef struct __attribute__((packed)) SPITask
     bytesTransferred += 5; \
     CommitTask(task); \
   } while(0)
+#else
+#define QUEUE_MOVE_CURSOR_TASK(cursor, pos) do { \
+    SPITask *task = AllocTask(2); \
+    task->cmd = (cursor); \
+    task->data[0] = (pos) >> 8; \
+    task->data[1] = (pos) & 0xFF; \
+    bytesTransferred += 3; \
+    CommitTask(task); \
+  } while(0)
+
+#define QUEUE_SET_WRITE_WINDOW_TASK(cursor, x, endX) do { \
+    SPITask *task = AllocTask(4); \
+    task->cmd = (cursor); \
+    task->data[0] = (x) >> 8; \
+    task->data[1] = (x) & 0xFF; \
+    task->data[2] = (endX) >> 8; \
+    task->data[3] = (endX) & 0xFF; \
+    bytesTransferred += 5; \
+    CommitTask(task); \
+  } while(0)
+#endif
+
 #endif
 
 typedef struct SharedMemory

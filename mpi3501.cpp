@@ -144,30 +144,30 @@ void DeinitSPIDisplay()
 
 #include <bcm2835.h>
 
-void inline spi_write(const char* tbuf, int len)
+void spi_write(const char* tbuf, int len)
 {
     volatile uint32_t* paddr = bcm2835_spi0 + BCM2835_SPI0_CS/4;
     volatile uint32_t* fifo = bcm2835_spi0 + BCM2835_SPI0_FIFO/4;
     uint32_t i;
 
+    bcm2835_peri_set_bits(paddr, BCM2835_SPI0_CS_TA, BCM2835_SPI0_CS_TA);
     /* Clear TX and RX fifos */
     bcm2835_peri_set_bits(paddr, BCM2835_SPI0_CS_CLEAR, BCM2835_SPI0_CS_CLEAR);
-    /* Set TA = 1 */
-    bcm2835_peri_set_bits(paddr, BCM2835_SPI0_CS_TA, BCM2835_SPI0_CS_TA);
 	// *fifo = tbuf[1];
 	*fifo = tbuf[0];
 	if (len > 2)
 		*fifo = tbuf[2];
-    while (!(bcm2835_peri_read_nb(paddr) & BCM2835_SPI0_CS_DONE));
-    bcm2835_peri_set_bits(paddr, 0, BCM2835_SPI0_CS_TA);
+    while (!(*paddr & BCM2835_SPI0_CS_DONE));
+    *paddr = BCM2835_SPI0_CS_TA;
 }
 /* Writes an number of bytes to SPI */
 
-void inline spi_write2(const char* tbuf, const char *tbuf2)
+void spi_write2(const char* tbuf, const char *tbuf2)
 {
 	volatile static uint32_t* paddr = bcm2835_spi0 + BCM2835_SPI0_CS/4;
 	volatile static uint32_t* fifo = bcm2835_spi0 + BCM2835_SPI0_FIFO/4;
 
+    /* Clear TX and RX fifos & Set TA = 1 */
     /* Set TA = 1 */
     bcm2835_peri_set_bits(paddr, BCM2835_SPI0_CS_TA, BCM2835_SPI0_CS_TA);
     /* Clear TX and RX fifos */
@@ -187,17 +187,17 @@ void inline spi_write2(const char* tbuf, const char *tbuf2)
     // bcm2835_peri_set_bits(paddr, 0, BCM2835_SPI0_CS_TA);
 }
 
-void inline lcd_data(uint16_t data) {
-	static char b1[3] = { 0, 0, 0x15 }, b2[2] = { 0, 0x1f};
-	*(unsigned short *)b1 = data;
-	spi_write2(b1, b2);
-}
+// void lcd_data(uint16_t data) {
+// 	static char b1[3] = { 0, 0, 0x15 }, b2[2] = { 0, 0x1f};
+// 	*(unsigned short *)b1 = data;
+// 	spi_write2(b1, b2);
+// }
 
-void inline lcd_cmd(uint16_t cmd) {
-	static char b1[3] = { 0, 0, 0x11 }, b2[2] = { 0, 0x1B};
-	*(unsigned short *)b1 = cmd;
-	spi_write2(b1, b2);
-}
+// void  lcd_cmd(uint16_t cmd) {
+// 	static char b1[3] = { 0, 0, 0x11 }, b2[2] = { 0, 0x1B};
+// 	*(unsigned short *)b1 = cmd;
+// 	spi_write2(b1, b2);
+// }
 
 #ifdef SPI_TRANSFER
 #undef SPI_TRANSFER
@@ -206,9 +206,9 @@ void inline lcd_cmd(uint16_t cmd) {
 { \
  	unsigned short dbuf[] = { __VA_ARGS__ }; \
 	int len = sizeof(dbuf)/(sizeof(unsigned short)); \
-	lcd_cmd(cmd); \
-	for(int ix = 0; ix < len; ix++) \
-		lcd_data(dbuf[ix]); \
+	lcd_cmd(cmd); int ix = 0; \
+	while(len--) \
+		lcd_data(dbuf[ix++]); \
 } while(0);
 
 int spi_open(void) {
@@ -236,6 +236,153 @@ int spi_open(void) {
 }
 
 
+void lcd_setptr(void) {
+	// SPI_TRANSFER(0x002b, 0x0000, 0x0000, 0x0001, 0x003f);
+	// lcd_cmd(0x002b);
+	// lcd_data(0x0000); 
+	// lcd_data(0x0000); // 0
+	// lcd_data(0x0001);
+	// lcd_data(0x003f); //319
+	
+	// SPI_TRANSFER(0x002a, 0x0000, 0x0000, 0x0001, 0x00df);
+	// lcd_cmd(0x002a);
+	// lcd_data(0x0000);
+	// lcd_data(0x0000); // 0
+	// lcd_data(0x0001);
+	// lcd_data(0x00df); // 479
+	
+	SPI_TRANSFER(0x2c);
+	// lcd_cmd(0x002c);
+}
+	
+
+void lcd_setarea(uint16_t x, uint16_t y) {
+	lcd_cmd(0x002b);
+	lcd_data(y>>8);
+	lcd_data(0x00ff&y);
+	lcd_data(0x0001);
+	lcd_data(0x003f);
+
+	lcd_cmd(0x002a);
+	lcd_data(x>>8) ;
+	lcd_data(0x00ff&x) ;
+	lcd_data(0x0001);
+	lcd_data(0x00df);
+	lcd_cmd(0x002c);
+}
+
+void lcd_setarea2(uint16_t sx, uint16_t sy, uint16_t x, uint16_t y) {
+	
+	if (sx>479)	sx=0;
+	if (sy>319) sy=0;
+	if (x>479) x=479;
+	if (y>319) y=319;
+	
+	lcd_cmd(0x002b);
+	lcd_data(sy>>8) ;
+	lcd_data(0x00ff&sy);
+	lcd_data(y>>8);
+	lcd_data(0x00ff&y);
+
+	lcd_cmd(0x002a);
+	lcd_data(sx>>8) ;
+	lcd_data(0x00ff&sx) ;
+	lcd_data(x>>8);
+	lcd_data(0x00ff&x);
+	
+	lcd_cmd(0x002c);
+}
+
+void lcd_fill(uint16_t color565) {
+	// static char b1[3] = { 0, 0, 0x15 }, b2[2] = { 0, 0x1f};
+	// b1[0] = ((char *)&color565)[1];
+	// b1[1] = ((char *)&color565)[0];
+	lcd_setptr();
+	for(int x=0; x<153601;x++) {
+		lcd_data(color565);
+		// bcm2835_spi_writenb(b1, 3);
+		// bcm2835_spi_writenb(b2, 2);
+	}
+}
+
+void lcd_fill2(uint16_t sx, uint16_t sy, uint16_t x, uint16_t y, uint16_t color565) {
+	uint16_t tmp=0;
+	int cnt;
+	if (sx>479) sx=0;
+	if (sy>319) sy=0;
+	if (x>479)  x=479;
+	if (y>319)  y=319;
+	
+	if (sx>x) {
+		tmp=sx;
+		sx=x;
+		x=tmp;
+	}
+	
+	if (sy>y) {
+		tmp=sy;
+		sy=y;
+		y=tmp;
+	}
+	
+	cnt = (y-sy) * (x-sx);
+	lcd_setarea2(sx,sy,x,y);
+	for(int t=0;t<cnt;t++) {
+		lcd_data(color565);
+	}	
+}
+
+#define lcd_setframe(x,y,x1,y1) lcd_setarea2(x,y,x+x1-1,x+y1)
+#define lcd_colorRGB(r,g,b) lcd_data((((r>>3)&0x1f)<<11)|(((g>>2)&0x3f)<<5)|((b>>3)&0x1f))
+
+void lcd_img(char *fname, uint16_t x, uint16_t y) {
+
+	uint8_t buf[54];
+	uint16_t p, c;
+	uint32_t isize, ioffset, iwidth, iheight, ibpp, fpos, rowbytes;
+
+	FILE *f = fopen(fname, "rb");
+	if (f != NULL) {
+		fseek(f, 0L, SEEK_SET);
+		fread(buf, 30, 1, f);
+
+		isize =	 buf[2] + (buf[3]<<8) + (buf[4]<<16) + (buf[5]<<24);
+		ioffset = buf[10] + (buf[11]<<8) + (buf[12]<<16) + (buf[13]<<24);
+		iwidth =	buf[18] + (buf[19]<<8) + (buf[20]<<16) + (buf[21]<<24);
+		iheight = buf[22] + (buf[23]<<8) + (buf[24]<<16) + (buf[25]<<24);
+		ibpp =		buf[28] + (buf[29]<<8);
+
+		printf("\n\n");
+		printf("File Size: %u\nOffset: %u\nWidth: %u\nHeight: %u\nBPP: %u\n\n",isize,ioffset,iwidth,iheight,ibpp);
+
+		lcd_setframe(x,y,iwidth,iheight); //set the active frame...
+
+		// Wrong calculationg bytes in row for bitmap. #1
+		rowbytes = (iwidth*3);
+		uint8_t d = (iwidth*3)%4;
+		if (d>0) { rowbytes += 4-d; }
+
+		for (p=iheight-1;p>0;p--) {
+			// p = relative page address (y)
+			fpos = ioffset+(p*rowbytes);
+			fseek(f, fpos, SEEK_SET);
+			for (c=0;c<iwidth;c++) {
+				// c = relative column address (x)
+				fread(buf, 3, 1, f);
+
+				// B buf[0]
+				// G buf[1]
+				// R buf[2]
+				// 18bit color mode
+				lcd_colorRGB(buf[2], buf[1], buf[0]);
+			}
+		}
+
+		fclose(f);
+	}
+}
+
+extern void ClearScreen();
 void InitKeDeiTrash()
 {
  	spi_open();
@@ -431,7 +578,13 @@ void InitKeDeiTrash()
 
 	SPI_TRANSFER(0x002c);
 	// lcd_cmd(0x002c);   
+	// lcd_fill(0xffff);
+	// lcd_img(const_cast<char*>("kedei_lcd_v50_pi.bmp"), 100, 25);
+	// ClearScreen();
 }
+
+
+
 
 void DeinitSPIDisplay()
 {

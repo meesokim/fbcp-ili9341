@@ -137,7 +137,7 @@ void Interleave8BitSPITaskTo9Bit(SPITask *task)
   const uint32_t size8BitTask = task->size - task->sizeExpandedTaskWithPadding;
 
   // 9-bit SPI task lives right at the end of the 8-bit task
-  uint8_t *dst = task->data + size8BitTask;
+  uint8_t *dst = (uint8_t *) task->data + size8BitTask;
 
   // Pre-clear the 9*8=72 bit tail end of the memory to all zeroes to avoid having to pad source data to multiples of 9. (plus padding bytes, just to be safe)
   memset(dst + task->sizeExpandedTaskWithPadding - 9 - SPI_9BIT_TASK_PADDING_BYTES, 0, 9 + SPI_9BIT_TASK_PADDING_BYTES);
@@ -171,7 +171,7 @@ void Interleave8BitSPITaskTo9Bit(SPITask *task)
     {
       uint8_t *d = dst + dstByte;
       dstByte += 9;
-      const uint8_t *s = task->data + src;
+      const uint8_t *s = (uint8_t *)task->data + src;
       src += 8;
 
       d[0] = 0x80 |               (s[0] >> 1);
@@ -268,39 +268,34 @@ void WaitForPolledSPITransferToFinish()
 }
 #ifdef KEDEI_TRASH
 extern void spi_write2(const char* tbuf, const char *tbuf2);
-void inline lcd_data(uint16_t data) {
+void lcd_data(uint16_t data) {
 	static char b1[3] = { 0, 0, 0x15 }, b2[2] = { 0, 0x1f};
 	*(unsigned short *)b1 = data;
-	// b1[0] = ((char *)&data)[1];
-	// b1[1] = ((char *)&data)[0];
+  printf("%04x,", data);
 	spi_write2(b1, b2);
 }
 
-void inline lcd_cmd(uint16_t cmd) {
+void lcd_cmd(uint16_t cmd) {
 	static char b1[3] = { 0, 0, 0x11 }, b2[2] = { 0, 0x1B};
 	*(unsigned short *)b1 = cmd;
-	// b1[0] = ((char *)&data)[1];
-	// b1[1] = ((char *)&data)[0];
+  printf("\n%02x:", cmd);
 	spi_write2(b1, b2);
 }
 
 void RunSPITask(SPITask *task)
 {
   uint32_t cs;
+  uint16_t cmd = task->cmd;
   uint16_t *tStart = (uint16_t *)task->PayloadStart();
   uint16_t *tEnd = (uint16_t *)task->PayloadEnd();
-  uint32_t payloadSize = tEnd - tStart;
+  uint32_t payloadSize = (tEnd - tStart);
   // uint8_t *tPrefillEnd = tStart + MIN(15, payloadSize);
-
 #if 1
-  lcd_cmd(task->cmd);
-  // printf("%02x:", task->cmd);
+  lcd_cmd(cmd);
   while(payloadSize--)
   {
-    // printf("%04x,", *tStart);
     lcd_data(*tStart++);
   }
-  //  printf("\r");
 #else
   /* Clear TX and RX fifos */
   spi->cs = BCM2835_SPI0_CS_TA | BCM2835_SPI0_CS_CLEAR_TX | DISPLAY_SPI_DRIVE_SETTINGS;
@@ -318,15 +313,15 @@ void RunSPITask(SPITask *task)
   while(!(spi->cs & (BCM2835_SPI0_CS_RXD|BCM2835_SPI0_CS_DONE))); 
   // while (!(bcm2835_peri_read_nb(paddr) & BCM2835_SPI0_CS_DONE));
   spi->cs = BCM2835_SPI0_CS_TA | BCM2835_SPI0_CS_CLEAR_TX | DISPLAY_SPI_DRIVE_SETTINGS;
-  while(payloadSize-=2)
+  while(payloadSize--)
   {
     /* Clear TX and RX fifos */
     spi->cs = BCM2835_SPI0_CS_TA | BCM2835_SPI0_CS_CLEAR_TX | DISPLAY_SPI_DRIVE_SETTINGS;
     //   bcm2835_peri_set_bits(paddr, BCM2835_SPI0_CS_CLEAR, BCM2835_SPI0_CS_CLEAR);
     //   /* Set TA = 1 */
     //   bcm2835_peri_set_bits(paddr, BCM2835_SPI0_CS_TA, BCM2835_SPI0_CS_TA);
-  	spi->fifo = *tStart++;
-  	spi->fifo = *tStart++;
+  	spi->fifo = *tStart>>8;
+  	spi->fifo = *tStart&0xff;
     spi->fifo = 0x15;
     while(!(spi->cs & (BCM2835_SPI0_CS_RXD|BCM2835_SPI0_CS_DONE))); 
     // while (!(bcm2835_peri_read_nb(paddr) & BCM2835_SPI0_CS_DONE));
@@ -336,6 +331,7 @@ void RunSPITask(SPITask *task)
     while(!(spi->cs & (BCM2835_SPI0_CS_RXD|BCM2835_SPI0_CS_DONE))); 
     // while (!(bcm2835_peri_read_nb(paddr) & BCM2835_SPI0_CS_DONE));
     spi->cs = BCM2835_SPI0_CS_TA | BCM2835_SPI0_CS_CLEAR_TX | DISPLAY_SPI_DRIVE_SETTINGS;
+    tStart++;
   }
 #endif
   // previousTaskWasSPI = true;  
@@ -355,7 +351,6 @@ void RunSPITask(SPITask *task)
   uint8_t *tEnd = task->PayloadEnd();
   const uint32_t payloadSize = tEnd - tStart;
   uint8_t *tPrefillEnd = tStart + MIN(15, payloadSize);
-
 #define TASK_SIZE_TO_USE_DMA 4
   // Do a DMA transfer if this task is suitable in size for DMA to handle
   if (payloadSize >= TASK_SIZE_TO_USE_DMA && (task->cmd == DISPLAY_WRITE_PIXELS || task->cmd == DISPLAY_SET_CURSOR_X || task->cmd == DISPLAY_SET_CURSOR_Y))
@@ -432,7 +427,7 @@ void RunSPITask(SPITask *task)
   uint8_t *tEnd = task->PayloadEnd();
   const uint32_t payloadSize = tEnd - tStart;
   uint8_t *tPrefillEnd = tStart + MIN(15, payloadSize);
-
+  exit(0);
   // Send the command word if display is 4-wire (3-wire displays can omit this, commands are interleaved in the data payload stream above)
 #ifndef SPI_3WIRE_PROTOCOL
   // An SPI transfer to the display always starts with one control (command) byte, followed by N data bytes.
