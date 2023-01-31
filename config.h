@@ -33,7 +33,7 @@
 // output new frames at this vsync-detached interval, so there's a 50 Hz vs 60 Hz mismatch that results
 // in visible microstuttering. Still, providing this as an option, this might be good for content that
 // is known to run at native 60Hz.
-// #define USE_GPU_VSYNC
+#define USE_GPU_VSYNC
 
 // Always enable GPU VSync on the Pi Zero. Even though it is suboptimal and can cause stuttering, it saves battery.
 #if defined(SINGLE_CORE_BOARD)
@@ -164,7 +164,7 @@
 // aspect ratio. Enabling this will cause e.g. 16:9 1080p source to be stretched to fully cover
 // a 4:3 320x240 display. If disabled, scaling is performed preserving aspect ratio, so letterboxes or
 // pillarboxes will be introduced if needed to retain proper width and height proportions.
-// #define DISPLAY_BREAK_ASPECT_RATIO_WHEN_SCALING
+#define DISPLAY_BREAK_ASPECT_RATIO_WHEN_SCALING
 
 // If defined, reverses RGB<->BGR color subpixel order. This is something that seems to be display panel
 // specific, rather than display controller specific, and displays manufactured with the same controller
@@ -217,7 +217,7 @@
 
 // Which state of the LOW_BATTERY_PIN is considered to be low battery. Note that the GPIO pin must be
 // in the correct state (input with pull-up/pull-down resistor) before the program is started.
-#define LOW_BATTERY_IS_ACTIVE_HIGH 0
+#define LOW_BATTERY_IS_ACTIVE_HIGH 1
 
 // Polling interval (in micro-second) for the low battery pin.
 #define LOW_BATTERY_POLLING_INTERVAL 1000000

@@ -61,7 +61,7 @@ void lcd_data(uint16_t data) {
 	static char b1[3] = { 0, 0, 0x15 }, b2[2] = { 0, 0x1f};
     *(uint16_t *)b1 = data;
     // printf("%02x", b1[1]);
-    // printf("%02x,", b1[0]);
+    // printf("%02x.", b1[0]);
 	spi_write2(b1, b2);
 }
 
@@ -376,8 +376,8 @@ void InitKeDeiTrash()
 {
     spi_open();
     lcd_init();
-    lcd_fill(0xfff);
-    ClearScreen();
+    // lcd_fill(0xfff);
+    // ClearScreen();
 }
 
 void DeinitSPIDisplay()
